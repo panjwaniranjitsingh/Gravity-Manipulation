@@ -26,6 +26,7 @@ public class GameManager : MonoBehaviour
             {
                 timerInSeconds = 0;
                 startTimer = false;
+                DisplayTimeLeft(timerInSeconds);
                 DisplayEndCanvas("Game Over!!!");
             }
             else
@@ -76,7 +77,7 @@ public class GameManager : MonoBehaviour
         if (!gameOver)
         {
             //Checking if player is falling continuously
-            gameOver = playerController.GetVerticalVelocity() < -25f;
+            gameOver = playerController.CheckGameOver();
             if (gameOver)
             {
                 DisplayEndCanvas("Game Over!!!");

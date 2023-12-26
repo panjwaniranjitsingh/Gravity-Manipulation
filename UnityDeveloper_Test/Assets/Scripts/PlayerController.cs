@@ -16,23 +16,33 @@ public class PlayerController : MonoBehaviour
     [SerializeField] Transform _playerHeadTop;
     [SerializeField] Transform _hologramHeadTop;
 
+    [SerializeField] Transform freeLookCam1;
+    [SerializeField] Transform freeLookCam2;
+    private Vector3 moveDir;
+
+    private bool transition;
+    private Coroutine hologramCoroutine;
+
     private void Start()
     {
         _rigidbody = GetComponent<Rigidbody>();
         _animator = GetComponent<Animator>();
         _hologram.gameObject.SetActive(false);
+        freeLookCam2.gameObject.SetActive(false);
     }
 
-    
+
     private void Update()
     {
+        if (transition)
+            return;
         PlayerMovementInput();
 
         GravityManipulation();
 
         ApplyGravity();
     }
-    
+
     private void ApplyGravity()
     {
         _rigidbody.AddForce(transform.up * _gravityForce, ForceMode.Force);
@@ -40,40 +50,62 @@ public class PlayerController : MonoBehaviour
 
     private void PlayerMovementInput()
     {
+        if (Input.anyKeyDown)
+        {
+            AlignPlayerRotationToCamera();
+        }
         isGrounded = Physics.Raycast(_groundCheck.position, -transform.up, 0.1f, groundLayerMask);
-        float horizontalVelocity = 0;
+        moveDir = Vector3.zero;
         if (Input.GetKey(KeyCode.W))
         {
-            _rigidbody.AddForce(transform.forward * _moveSpeed * Time.deltaTime,ForceMode.VelocityChange);
-            horizontalVelocity = Vector3.Dot(_rigidbody.velocity, transform.forward);
-
+            moveDir = transform.forward;
         }
         if (Input.GetKey(KeyCode.S))
         {
-            _rigidbody.AddForce(_moveSpeed * -1f * transform.forward * Time.deltaTime, ForceMode.VelocityChange);
-            horizontalVelocity = Vector3.Dot(_rigidbody.velocity, -transform.forward);
+            moveDir = -1f * transform.forward;
         }
         if (Input.GetKey(KeyCode.A))
         {
-            _rigidbody.AddForce(_moveSpeed * -1f * transform.right * Time.deltaTime, ForceMode.VelocityChange);
-            horizontalVelocity = Vector3.Dot(_rigidbody.velocity, -transform.right);
+            moveDir = -1f * transform.right;
         }
         if (Input.GetKey(KeyCode.D))
         {
-            _rigidbody.AddForce(transform.right * _moveSpeed * Time.deltaTime, ForceMode.VelocityChange);
-            horizontalVelocity = Vector3.Dot(_rigidbody.velocity, transform.right);
+            moveDir = transform.right;
         }
-
+        if (moveDir.magnitude >= 0.1f)
+        {
+            _rigidbody.AddForce(moveDir * _moveSpeed * Time.deltaTime);
+        }
         if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
             _rigidbody.AddForce(transform.up * _jumpSpeed * Time.deltaTime, ForceMode.VelocityChange);
         }
 
-        _animator.SetFloat("horizontalSpeed", horizontalVelocity);
+        _animator.SetFloat("horizontalSpeed", moveDir.magnitude);
 
         _animator.SetBool("isFalling", !isGrounded);
     }
-   
+
+    private void AlignPlayerRotationToCamera()
+    {
+        Transform cameraForward = Camera.main.gameObject.transform;
+        Debug.Log("Transform.up=" + transform.up);
+        if (Mathf.Abs(transform.up.x) > 0.95)
+        {
+            transform.eulerAngles = new Vector3(cameraForward.eulerAngles.x, transform.eulerAngles.y, transform.eulerAngles.z);
+        }
+        else if (Mathf.Abs(transform.up.y) > 0.95)
+        {
+            Debug.Log(cameraForward.eulerAngles.y);
+            transform.eulerAngles = new Vector3(transform.eulerAngles.x, cameraForward.eulerAngles.y, transform.eulerAngles.z);
+        }
+        else
+        {
+            transform.eulerAngles = new Vector3(transform.eulerAngles.x, transform.eulerAngles.y, cameraForward.eulerAngles.z);
+        }
+
+
+    }
 
     private void GravityManipulation()
     {
@@ -95,15 +127,20 @@ public class PlayerController : MonoBehaviour
         }
         if (Input.GetKeyDown(KeyCode.Return) && _hologram.gameObject.activeInHierarchy)
         {
-            TeleportPlayerTo(_hologram);
+            StartCoroutine(TeleportPlayerTo(_hologram));
         }
     }
-    private void TeleportPlayerTo(Transform moveTo)
+    private IEnumerator TeleportPlayerTo(Transform moveTo)
     {
-
-        transform.position = moveTo.position;
-        transform.rotation = moveTo.rotation;
+        transition = true;
+        StopCoroutine(hologramCoroutine);
         _hologram.gameObject.SetActive(false);
+        transform.position = moveTo.position;
+        RotatePlayer(moveTo.rotation);
+        yield return new WaitForSeconds(1f);
+        ChangeCamera();
+        yield return new WaitForSeconds(1f);
+        transition = false;
     }
 
     private void ShowHologram(float x, float z)
@@ -114,19 +151,39 @@ public class PlayerController : MonoBehaviour
 
         _hologram.transform.position += _playerHeadTop.position - _hologramHeadTop.position;
         _hologram.gameObject.SetActive(true);
-        StartCoroutine(HideHologram());
+        hologramCoroutine = StartCoroutine(HideHologram());
     }
     IEnumerator HideHologram()
     {
         yield return new WaitForSeconds(1f);
-        if(_hologram.gameObject.activeInHierarchy)
+        if (_hologram.gameObject.activeInHierarchy)
         {
             _hologram.gameObject.SetActive(false);
         }
     }
 
-    public float GetVerticalVelocity()
+    public bool CheckGameOver()
     {
-        return Vector3.Dot(_rigidbody.velocity, transform.up);
+        float verticalVelocity = Vector3.Dot(_rigidbody.velocity, transform.up);
+        return Mathf.Abs(verticalVelocity) > 25f;
+    }
+
+    private void ChangeCamera()
+    {
+        if (!freeLookCam2.gameObject.activeInHierarchy)
+        {
+            freeLookCam2.gameObject.SetActive(true);
+            freeLookCam1.gameObject.SetActive(false);
+        }
+        else if (!freeLookCam1.gameObject.activeInHierarchy)
+        {
+            freeLookCam1.gameObject.SetActive(true);
+            freeLookCam2.gameObject.SetActive(false);
+        }
+    }
+
+    private void RotatePlayer(Quaternion rotation)
+    {
+        transform.rotation = rotation;
     }
 }
