@@ -3,30 +3,37 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
+
+    [SerializeField] private Transform _modelTransform;
+    private Transform _playerTransform;
     private Rigidbody _rigidbody;
+    private Vector3 _moveDir;
     [SerializeField] private float _moveSpeed = 10f;
     [SerializeField] private float _jumpSpeed = 10f;
     [SerializeField] private float _gravityForce = -9.81f;
-    private bool isGrounded;
+    [SerializeField] private float _decelerationFactor = 10f;
+    private bool _isGrounded;
     [SerializeField] private LayerMask groundLayerMask;
     [SerializeField] private Transform _groundCheck;
+    private Transform mainCameraTransform;
 
     private Animator _animator;
+
     [SerializeField] Transform _hologram;
     [SerializeField] Transform _playerHeadTop;
     [SerializeField] Transform _hologramHeadTop;
+    private Coroutine _hologramCoroutine;
 
     [SerializeField] Transform freeLookCam1;
     [SerializeField] Transform freeLookCam2;
-    private Vector3 moveDir;
 
-    private bool transition;
-    private Coroutine hologramCoroutine;
-
+    private bool _transition;
     private void Start()
     {
-        _rigidbody = GetComponent<Rigidbody>();
-        _animator = GetComponent<Animator>();
+        _rigidbody = _modelTransform.GetComponent<Rigidbody>();
+        _animator = _modelTransform.GetComponent<Animator>();
+        _playerTransform = _modelTransform.transform;
+        mainCameraTransform = Camera.main.gameObject.transform;
         _hologram.gameObject.SetActive(false);
         freeLookCam2.gameObject.SetActive(false);
     }
@@ -34,7 +41,7 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
-        if (transition)
+        if (_transition)
             return;
         PlayerMovementInput();
 
@@ -45,85 +52,82 @@ public class PlayerController : MonoBehaviour
 
     private void ApplyGravity()
     {
-        _rigidbody.AddForce(transform.up * _gravityForce, ForceMode.Force);
+        _rigidbody.AddForce(_playerTransform.up * _gravityForce, ForceMode.Force);
     }
 
     private void PlayerMovementInput()
     {
-        if (Input.anyKeyDown)
+        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.D) || Input.GetKeyDown(KeyCode.Space))
         {
             AlignPlayerRotationToCamera();
         }
-        isGrounded = Physics.Raycast(_groundCheck.position, -transform.up, 0.1f, groundLayerMask);
-        moveDir = Vector3.zero;
+        _isGrounded = Physics.Raycast(_groundCheck.position, -_playerTransform.up, 2f, groundLayerMask);
+        _moveDir = Vector3.zero;
         if (Input.GetKey(KeyCode.W))
         {
-            moveDir = transform.forward;
+            _moveDir = _playerTransform.forward;
         }
         if (Input.GetKey(KeyCode.S))
         {
-            moveDir = -1f * transform.forward;
+            _moveDir = -1f * _playerTransform.forward;
         }
         if (Input.GetKey(KeyCode.A))
         {
-            moveDir = -1f * transform.right;
+            _moveDir = -1f * _playerTransform.right;
         }
         if (Input.GetKey(KeyCode.D))
         {
-            moveDir = transform.right;
-        }
-        if (moveDir.magnitude >= 0.1f)
-        {
-            _rigidbody.AddForce(moveDir * _moveSpeed * Time.deltaTime);
-        }
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
-        {
-            _rigidbody.AddForce(transform.up * _jumpSpeed * Time.deltaTime, ForceMode.VelocityChange);
+            _moveDir = _playerTransform.right;
         }
 
-        _animator.SetFloat("horizontalSpeed", moveDir.magnitude);
+        if (Input.GetKeyDown(KeyCode.Space) && _isGrounded)
+        {
+            _rigidbody.AddForce(_playerTransform.up * _jumpSpeed * Time.deltaTime, ForceMode.VelocityChange);
+        }
 
-        _animator.SetBool("isFalling", !isGrounded);
+        if (_moveDir.magnitude >= 0.1f)
+        {
+            _rigidbody.AddForce(_moveDir * _moveSpeed * Time.deltaTime);
+        }
+        else
+        {
+            if (Mathf.Abs(Vector3.Dot(_rigidbody.velocity, _playerTransform.up)) < 0.1)
+            {
+                _rigidbody.velocity -= _rigidbody.velocity * _decelerationFactor * Time.deltaTime;
+                if (_rigidbody.velocity.magnitude < 0.1)
+                {
+                    _rigidbody.velocity = Vector3.zero;
+                }
+            }
+        }
+
+        _animator.SetFloat("horizontalSpeed", _moveDir.magnitude);
+
+        _animator.SetBool("isFalling", !_isGrounded);
     }
 
     private void AlignPlayerRotationToCamera()
     {
-        Transform cameraForward = Camera.main.gameObject.transform;
-        Debug.Log("Transform.up=" + transform.up);
-        if (Mathf.Abs(transform.up.x) > 0.95)
-        {
-            transform.eulerAngles = new Vector3(cameraForward.eulerAngles.x, transform.eulerAngles.y, transform.eulerAngles.z);
-        }
-        else if (Mathf.Abs(transform.up.y) > 0.95)
-        {
-            Debug.Log(cameraForward.eulerAngles.y);
-            transform.eulerAngles = new Vector3(transform.eulerAngles.x, cameraForward.eulerAngles.y, transform.eulerAngles.z);
-        }
-        else
-        {
-            transform.eulerAngles = new Vector3(transform.eulerAngles.x, transform.eulerAngles.y, cameraForward.eulerAngles.z);
-        }
-
-
+        RotatePlayer(Quaternion.LookRotation(Vector3.Cross(mainCameraTransform.right, _playerTransform.up), _playerTransform.up));
     }
 
     private void GravityManipulation()
     {
         if (Input.GetKeyDown(KeyCode.UpArrow))
         {
-            ShowHologram(-90, 0);
+            ShowHologram(HologramPosition.Forward);
         }
         if (Input.GetKeyDown(KeyCode.LeftArrow))
         {
-            ShowHologram(0, -90);
+            ShowHologram(HologramPosition.Left);
         }
         if (Input.GetKeyDown(KeyCode.DownArrow))
         {
-            ShowHologram(90, 0);
+            ShowHologram(HologramPosition.Backward);
         }
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
-            ShowHologram(0, 90);
+            ShowHologram(HologramPosition.Right);
         }
         if (Input.GetKeyDown(KeyCode.Return) && _hologram.gameObject.activeInHierarchy)
         {
@@ -132,30 +136,50 @@ public class PlayerController : MonoBehaviour
     }
     private IEnumerator TeleportPlayerTo(Transform moveTo)
     {
-        transition = true;
-        StopCoroutine(hologramCoroutine);
+        _transition = true;
+        StopCoroutine(_hologramCoroutine);
         _hologram.gameObject.SetActive(false);
-        transform.position = moveTo.position;
+        _playerTransform.position = _playerHeadTop.position;
         RotatePlayer(moveTo.rotation);
-        yield return new WaitForSeconds(1f);
         ChangeCamera();
         yield return new WaitForSeconds(1f);
-        transition = false;
+        _transition = false;
     }
 
-    private void ShowHologram(float x, float z)
+    private void ShowHologram(HologramPosition hologramPosition)
     {
         _hologram.transform.position = _playerHeadTop.position;
 
-        _hologram.rotation = transform.rotation * Quaternion.Euler(x, 0, z);
+        switch (hologramPosition)
+        {
+            case HologramPosition.Forward:
+                _hologram.transform.rotation = Quaternion.LookRotation(_playerTransform.up, -_playerTransform.forward);
+                break;
+            case HologramPosition.Backward:
+                _hologram.transform.rotation = Quaternion.LookRotation(-_playerTransform.up, _playerTransform.forward);
+                break;
+            case HologramPosition.Left:
+                _hologram.transform.rotation = Quaternion.LookRotation(_playerTransform.forward, _playerTransform.right);
+                break;
+            case HologramPosition.Right:
+                _hologram.transform.rotation = Quaternion.LookRotation(_playerTransform.forward, -_playerTransform.right);
+                break;
+        }
 
-        _hologram.transform.position += _playerHeadTop.position - _hologramHeadTop.position;
+
+
+        _hologram.transform.position += _playerHeadTop.position - _hologramHeadTop.position + _playerHeadTop.up * 0.1f;
+
         _hologram.gameObject.SetActive(true);
-        hologramCoroutine = StartCoroutine(HideHologram());
+        if (_hologramCoroutine != null)
+        {
+            StopCoroutine(_hologramCoroutine);
+        }
+        _hologramCoroutine = StartCoroutine(HideHologram());
     }
     IEnumerator HideHologram()
     {
-        yield return new WaitForSeconds(1f);
+        yield return new WaitForSeconds(5f);
         if (_hologram.gameObject.activeInHierarchy)
         {
             _hologram.gameObject.SetActive(false);
@@ -164,7 +188,7 @@ public class PlayerController : MonoBehaviour
 
     public bool CheckGameOver()
     {
-        float verticalVelocity = Vector3.Dot(_rigidbody.velocity, transform.up);
+        float verticalVelocity = Vector3.Dot(_rigidbody.velocity, _playerTransform.up);
         return Mathf.Abs(verticalVelocity) > 25f;
     }
 
@@ -182,8 +206,16 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    private void RotatePlayer(Quaternion rotation)
+    public void RotatePlayer(Quaternion rotation)
     {
-        transform.rotation = rotation;
+        _transition = true;
+        _playerTransform.rotation = rotation;
+        ChangeCamera();
+        _transition = false;
     }
+}
+
+public enum HologramPosition
+{
+    Forward, Backward, Left, Right
 }

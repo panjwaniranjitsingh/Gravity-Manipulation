@@ -4,7 +4,7 @@ public class Collectibles : MonoBehaviour
 {
     private void OnTriggerEnter(Collider other)
     {
-        if(other.gameObject.GetComponent<PlayerController>() != null)
+        if(other.gameObject.GetComponentInParent<PlayerController>() != null)
         {
             gameObject.SetActive(false);
         }
